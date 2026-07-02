@@ -14,6 +14,7 @@ class User(Base):
     email: Mapped[str] = mapped_column(String, unique=True, index=True, nullable=False)
     hashed_password: Mapped[str] = mapped_column(String, nullable=False)
     is_active: Mapped[bool] = mapped_column(default=True)
+    refresh_token: Mapped[str | None] = mapped_column(String, nullable=True)
 
     tasks: Mapped[List["Task"]] = relationship(
         "Task",

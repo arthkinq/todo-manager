@@ -8,7 +8,7 @@ from app.api import deps
 from app.core import security
 from app.db.models import User
 from app.schemas.user import UserCreate, UserResponse
-from app.schemas.token import Token
+from app.schemas.token import Token, RefreshTokenRequest
 
 router = APIRouter()
 
@@ -50,7 +50,54 @@ async def login(
         )
 
     access_token = security.create_access_token(data={"sub": str(user.id)})
+    refresh_token = security.create_refresh_token()
+
+    user.refresh_token = refresh_token
+    session.add(user)
+    await session.commit()
+
     return {
         "access_token": access_token,
+        "refresh_token": refresh_token,
         "token_type": "bearer"
     }
+
+
+@router.post("/refresh", response_model=Token)
+async def refresh_token(
+        request: RefreshTokenRequest,
+        session: AsyncSession = Depends(deps.get_db)
+) -> Any:
+    stmt = select(User).where(User.refresh_token == request.refresh_token)
+    result = await session.execute(stmt)
+    user = result.scalar_one_or_none()
+
+    if not user or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect or expired refresh token"
+        )
+
+    new_access_token = security.create_access_token(data={"sub": str(user.id)})
+    new_refresh_token = security.create_refresh_token()
+
+    user.refresh_token = new_refresh_token
+    session.add(user)
+    await session.commit()
+
+    return {
+        "access_token": new_access_token,
+        "refresh_token": new_refresh_token,
+        "token_type": "bearer"
+    }
+
+
+@router.post("/logout")
+async def logout(
+        current_user: User = Depends(deps.get_current_user),
+        session: AsyncSession = Depends(deps.get_db)
+) -> Any:
+    current_user.refresh_token = None
+    session.add(current_user)
+    await session.commit()
+    return {"detail": "Successful logout"}
